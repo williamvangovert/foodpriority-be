@@ -90,16 +90,10 @@ export const calculateSAWRanking = async (
       Number(d.longitude_donatur)
     );
 
-    // Expiry hours remaining (cost/benefit: usually cost in user request "soon to expire", but let's handle dynamically based on DB)
+    // Expiry hours remaining (cost: smaller is better)
     const expiryDate = new Date(d.batas_kadaluwarsa);
     const diffMs = expiryDate.getTime() - now.getTime();
     const expiryHours = Math.max(0.1, diffMs / (1000 * 60 * 60)); // min 0.1 hours to avoid division by zero
-
-    // Quantity (benefit: larger is better)
-    const quantity = d.jumlah_porsi;
-
-    // Packaging value (benefit: larger is better)
-    const packagingVal = getPackagingValue(d.kemasan || "Baik");
 
     return {
       ...d,
@@ -107,15 +101,13 @@ export const calculateSAWRanking = async (
       criteriaValues: {
         jarak: Math.max(0.1, distance), // min 0.1 km to avoid division by zero
         kadaluwarsa: expiryHours,
-        jumlah: quantity,
-        kemasan: packagingVal,
       },
     };
   });
 
   // 4. Find Min & Max for normalization
-  const minValues: Record<string, number> = { jarak: Infinity, kadaluwarsa: Infinity, jumlah: Infinity, kemasan: Infinity };
-  const maxValues: Record<string, number> = { jarak: -Infinity, kadaluwarsa: -Infinity, jumlah: -Infinity, kemasan: -Infinity };
+  const minValues: Record<string, number> = { jarak: Infinity, kadaluwarsa: Infinity };
+  const maxValues: Record<string, number> = { jarak: -Infinity, kadaluwarsa: -Infinity };
 
   processedDonations.forEach((d) => {
     Object.keys(d.criteriaValues).forEach((key) => {

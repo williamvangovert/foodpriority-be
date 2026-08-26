@@ -78,28 +78,22 @@ const seedData = async () => {
       console.log("[db] Admin user already exists.");
     }
 
-    // Seed default SAW criteria weights
-    const criteriaCount = await client.query('SELECT COUNT(*) FROM "Pengaturan_SAW"');
-    if (parseInt(criteriaCount.rows[0].count, 10) === 0) {
-      console.log("[db] Seeding default SAW criteria weights...");
-      const defaultCriteria = [
-        { name: "jarak", weight: 0.40, type: "cost" },
-        { name: "kadaluwarsa", weight: 0.35, type: "benefit" },
-        { name: "jumlah", weight: 0.15, type: "benefit" },
-        { name: "kemasan", weight: 0.10, type: "benefit" }
-      ];
+    // Re-seed SAW criteria weights (clear old ones to enforce new schema)
+    console.log("[db] Seeding default SAW criteria weights (2 criteria: Jarak & Kadaluwarsa)...");
+    await client.query('DELETE FROM "Pengaturan_SAW"');
+    const defaultCriteria = [
+      { name: "jarak", weight: 0.40, type: "cost" },
+      { name: "kadaluwarsa", weight: 0.60, type: "cost" }
+    ];
 
-      for (const criteria of defaultCriteria) {
-        await client.query(
-          `INSERT INTO "Pengaturan_SAW" (id_admin, nama_kriteria, nilai_bobot, tipe)
-           VALUES ($1, $2, $3, $4)`,
-          [adminId, criteria.name, criteria.weight, criteria.type]
-        );
-      }
-      console.log("[db] Default SAW criteria weights created successfully.");
-    } else {
-      console.log("[db] SAW criteria weights already exist.");
+    for (const criteria of defaultCriteria) {
+      await client.query(
+        `INSERT INTO "Pengaturan_SAW" (id_admin, nama_kriteria, nilai_bobot, tipe)
+         VALUES ($1, $2, $3, $4)`,
+        [adminId, criteria.name, criteria.weight, criteria.type]
+      );
     }
+    console.log("[db] Default SAW criteria weights created successfully.");
 
   } catch (error) {
     console.error("[db] Error initializing database:", error);
