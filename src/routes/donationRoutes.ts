@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "path";
-import { createDonation, getDonations, getMyDonations, updateDonationStatus } from "../controllers/donationController";
+import { createDonation, getDonations, getMyDonations, updateDonationStatus, deleteDonation } from "../controllers/donationController";
 import { authenticateToken } from "../middleware/auth";
 
 // Multer config for file uploads
@@ -22,5 +22,7 @@ router.post("/", authenticateToken, upload.single("foto_makanan"), createDonatio
 router.get("/", authenticateToken, getDonations);
 router.get("/my", authenticateToken, getMyDonations);
 router.put("/:id/status", authenticateToken, updateDonationStatus);
+router.delete("/:id", authenticateToken, deleteDonation);
 
 export default router;
+

@@ -32,19 +32,19 @@ export const createClaim = async (req: AuthRequest, res: Response) => {
 
     // Decrement portion by 1
     const newPortions = donation.jumlah_porsi - 1;
-    const newStatus = newPortions === 0 ? "Selesai" : "Sedang Diambil";
+    const newStatus = newPortions === 0 ? "Sedang Diambil" : donation.status_donasi;
 
     await pool.query(
       'UPDATE "Donasi" SET jumlah_porsi = $1, status_donasi = $2 WHERE id = $3',
       [newPortions, newStatus, id_donasi]
     );
 
-    // Create Transaksi_Klaim record
+    // Create Transaksi_Klaim record (status: 'Sedang Diambil' / 'Menunggu')
     const result = await pool.query(
       `INSERT INTO "Transaksi_Klaim" (
         id_donasi, id_penerima, jarak_antar_lokasi, skor_saw, status_klaim
       )
-       VALUES ($1, $2, $3, $4, 'Menunggu')
+       VALUES ($1, $2, $3, $4, 'Sedang Diambil')
        RETURNING *`,
       [id_donasi, req.user.id, parseFloat(jarak_antar_lokasi), parseFloat(skor_saw)]
     );
@@ -126,15 +126,18 @@ export const updateClaimStatus = async (req: AuthRequest, res: Response) => {
 
     const claim = claimResult.rows[0];
 
+    // Normalize status: "Sudah Diambil" -> "Selesai"
+    const targetStatus = (status_klaim === "Sudah Diambil" || status_klaim === "Selesai") ? "Selesai" : status_klaim;
+
     // Ownership checks:
     // - Recipients can cancel ('Dibatalkan') their own claims.
-    // - Donors can accept/complete ('Diambil', 'Selesai') claims on their donations.
-    if (status_klaim === "Dibatalkan" && claim.id_penerima !== req.user.id) {
+    // - Donors can accept/complete ('Diambil', 'Sedang Diambil', 'Selesai', 'Sudah Diambil') claims on their donations.
+    if (targetStatus === "Dibatalkan" && claim.id_penerima !== req.user.id) {
       return res.status(403).json({ message: "Anda hanya dapat membatalkan klaim Anda sendiri." });
     }
 
     if (
-      (status_klaim === "Diambil" || status_klaim === "Selesai") &&
+      (targetStatus === "Diambil" || targetStatus === "Sedang Diambil" || targetStatus === "Selesai") &&
       claim.id_donatur !== req.user.id &&
       req.user.role !== "admin"
     ) {
@@ -145,7 +148,7 @@ export const updateClaimStatus = async (req: AuthRequest, res: Response) => {
     await pool.query("BEGIN");
 
     // If claim is canceled, restore the portion count in Donasi
-    if (status_klaim === "Dibatalkan" && claim.status_klaim !== "Dibatalkan") {
+    if (targetStatus === "Dibatalkan" && claim.status_klaim !== "Dibatalkan") {
       const restoredPortions = claim.jumlah_porsi + 1;
       await pool.query(
         'UPDATE "Donasi" SET jumlah_porsi = $1, status_donasi = \'Tersedia\' WHERE id = $2',
@@ -154,7 +157,7 @@ export const updateClaimStatus = async (req: AuthRequest, res: Response) => {
     }
 
     // If claim is completed, set status_donasi to 'Selesai' if portions are 0
-    if (status_klaim === "Selesai" && claim.jumlah_porsi === 0) {
+    if (targetStatus === "Selesai" && claim.jumlah_porsi === 0) {
       await pool.query(
         'UPDATE "Donasi" SET status_donasi = \'Selesai\' WHERE id = $1',
         [claim.id_donasi]
@@ -164,7 +167,7 @@ export const updateClaimStatus = async (req: AuthRequest, res: Response) => {
     const updatedClaim = await pool.query(
       `UPDATE "Transaksi_Klaim" SET status_klaim = $1 
        WHERE id = $2 RETURNING *`,
-      [status_klaim, id]
+      [targetStatus, id]
     );
 
     await pool.query("COMMIT");

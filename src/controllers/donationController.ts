@@ -95,7 +95,7 @@ export const updateDonationStatus = async (req: AuthRequest, res: Response) => {
   }
 
   const { id } = req.params;
-  const { status_donasi } = req.body; // 'Tersedia' | 'Sedang Diambil' | 'Selesai'
+  const { status_donasi } = req.body; // 'Tersedia' | 'Sedang Diambil' | 'Sudah Diambil' | 'Selesai'
 
   try {
     // Verify ownership (unless admin)
@@ -109,14 +109,35 @@ export const updateDonationStatus = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "Anda tidak memiliki hak untuk mengubah donasi ini." });
     }
 
+    // Normalize status: "Sudah Diambil" -> "Selesai", or keep "Dibatalkan", "Tersedia", "Sedang Diambil"
+    const targetStatus = (status_donasi === "Sudah Diambil" || status_donasi === "Selesai") ? "Selesai" : status_donasi;
+
     const result = await pool.query(
       `UPDATE "Donasi" SET status_donasi = $1 
        WHERE id = $2 RETURNING *`,
-      [status_donasi, id]
+      [targetStatus, id]
     );
 
+    // If marked as Selesai / Sudah Diambil, also update associated claims that are in progress
+    if (targetStatus === "Selesai") {
+      await pool.query(
+        `UPDATE "Transaksi_Klaim" SET status_klaim = 'Selesai' 
+         WHERE id_donasi = $1 AND status_klaim IN ('Menunggu', 'Diambil', 'Sedang Diambil')`,
+        [id]
+      );
+    }
+
+    // If cancelled by donor, mark active claims as Dibatalkan
+    if (targetStatus === "Dibatalkan") {
+      await pool.query(
+        `UPDATE "Transaksi_Klaim" SET status_klaim = 'Dibatalkan' 
+         WHERE id_donasi = $1 AND status_klaim IN ('Menunggu', 'Diambil', 'Sedang Diambil')`,
+        [id]
+      );
+    }
+
     res.json({
-      message: "Status donasi berhasil diperbarui!",
+      message: targetStatus === "Dibatalkan" ? "Donasi makanan berhasil dibatalkan." : "Status donasi berhasil diperbarui!",
       donation: result.rows[0],
     });
 
@@ -125,3 +146,32 @@ export const updateDonationStatus = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Gagal memperbarui status donasi.", error: error.message });
   }
 };
+
+export const deleteDonation = async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Tidak terautentikasi." });
+  }
+
+  const { id } = req.params;
+
+  try {
+    const donationCheck = await pool.query('SELECT * FROM "Donasi" WHERE id = $1', [id]);
+    if (donationCheck.rows.length === 0) {
+      return res.status(404).json({ message: "Donasi tidak ditemukan." });
+    }
+
+    const donation = donationCheck.rows[0];
+    if (donation.id_donatur !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Anda tidak memiliki hak untuk menghapus donasi ini." });
+    }
+
+    await pool.query('DELETE FROM "Donasi" WHERE id = $1', [id]);
+
+    res.json({ message: "Donasi makanan berhasil dihapus dari sistem." });
+  } catch (error: any) {
+    console.error("Delete donation error:", error);
+    res.status(500).json({ message: "Gagal menghapus donasi.", error: error.message });
+  }
+};
+
+
