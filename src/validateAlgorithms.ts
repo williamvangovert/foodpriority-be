@@ -74,10 +74,10 @@ const haversineDataset: SampleLocationPair[] = [
 
 // 2. SAW Validation Dataset (10 Alternatives)
 const sawAlternatives: Alternative[] = [
-  { code: "A1", namaMakanan: "Susu Kedelai Murni (UNAI)", jarakKm: 0.15, sisaWaktuJam: 8 },
-  { code: "A2", namaMakanan: "Nasi Goreng Vegetarian (UNAI)", jarakKm: 0.12, sisaWaktuJam: 12 },
-  { code: "A3", namaMakanan: "Sate Jamur Tiram (UNAI)", jarakKm: 0.18, sisaWaktuJam: 18 },
-  { code: "A4", namaMakanan: "Roti Gandum Sehat (UNAI)", jarakKm: 0.20, sisaWaktuJam: 36 },
+  { code: "A1", namaMakanan: "Susu Kedelai Murni (Dekat UNAI)", jarakKm: 0.25, sisaWaktuJam: 8 },
+  { code: "A2", namaMakanan: "Nasi Goreng Vegetarian (Dekat UNAI)", jarakKm: 0.35, sisaWaktuJam: 12 },
+  { code: "A3", namaMakanan: "Sate Jamur Tiram (Dekat UNAI)", jarakKm: 0.45, sisaWaktuJam: 18 },
+  { code: "A4", namaMakanan: "Roti Gandum Sehat (Dekat UNAI)", jarakKm: 0.60, sisaWaktuJam: 36 },
   { code: "A5", namaMakanan: "Bakso Cuanki Anget (Parongpong)", jarakKm: 2.10, sisaWaktuJam: 8 },
   { code: "A6", namaMakanan: "Nasi Goreng Parongpong", jarakKm: 2.25, sisaWaktuJam: 12 },
   { code: "A7", namaMakanan: "Ayam Bakar Madu (Parongpong)", jarakKm: 2.30, sisaWaktuJam: 24 },

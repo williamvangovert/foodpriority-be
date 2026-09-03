@@ -7,17 +7,17 @@ async function seedUnaiData() {
   try {
     const passwordHash = await bcrypt.hash("password123", 10);
 
-    // 1. Seed Donor: Kantin UNAI
+    // 1. Seed Donor: Depot Makan Dekat UNAI (Outside campus)
     const donorUnai = await pool.query(
       `INSERT INTO "User" (nama_lengkap, username, no_hp, alamat, password, role, status)
-       VALUES ('Kantin Sehat UNAI', 'kantinunai', '08987654329', 'Jl. Kolonel Masturi No. 96, Universitas Advent Indonesia, Parongpong', $1, 'donor', 'Terverifikasi')
+       VALUES ('Depot Makan Dekat UNAI', 'kantinunai', '08987654329', 'Jl. Kolonel Masturi No. 102, Parongpong, Bandung Barat (Dekat Kampus UNAI)', $1, 'donor', 'Terverifikasi')
        ON CONFLICT (username) DO UPDATE SET nama_lengkap = EXCLUDED.nama_lengkap
        RETURNING id`,
       [passwordHash]
     );
     const unaiDonorId = donorUnai.rows[0]?.id;
 
-    console.log("[seeder] UNAI region donor seeded successfully!");
+    console.log("[seeder] Area outside UNAI donor seeded successfully!");
 
     // 2. Clear old UNAI donations to avoid duplicate keys or clutter
     const namesToClear = [
@@ -33,14 +33,15 @@ async function seedUnaiData() {
 
     const now = new Date();
 
-    // 3. Insert 4 different donations around Universitas Advent Indonesia (UNAI) center (-6.8122, 107.5936)
+    // 3. Insert 4 different donations outside Universitas Advent Indonesia (UNAI) campus center (-6.8122, 107.5936)
+    // Coordinates set slightly outside campus grounds along Jl. Kolonel Masturi
     const unaiDonations = [
       {
         name: "Nasi Goreng Vegetarian",
-        desc: "Nasi goreng sehat tanpa daging menggunakan bahan-bahan organik kantin kampus.",
+        desc: "Nasi goreng sehat tanpa daging dari depot kuliner dekat kampus.",
         portions: 12,
-        lat: -6.8123,
-        lng: 107.5935,
+        lat: -6.8145,
+        lng: 107.5948,
         expiryHours: 12,
         kemasan: "Baik"
       },
@@ -48,8 +49,8 @@ async function seedUnaiData() {
         name: "Roti Gandum Sehat",
         desc: "Roti gandum utuh buatan rumah, kaya serat dan baik untuk kesehatan.",
         portions: 15,
-        lat: -6.8118,
-        lng: 107.5942,
+        lat: -6.8160,
+        lng: 107.5950,
         expiryHours: 36,
         kemasan: "Sangat Baik"
       },
@@ -57,8 +58,8 @@ async function seedUnaiData() {
         name: "Susu Kedelai Murni",
         desc: "Susu kedelai murni hangat tanpa pemanis buatan, dibuat segar pagi ini.",
         portions: 20,
-        lat: -6.8130,
-        lng: 107.5930,
+        lat: -6.8140,
+        lng: 107.5920,
         expiryHours: 8, // Very soon expiry = High SAW priority!
         kemasan: "Baik"
       },
@@ -66,8 +67,8 @@ async function seedUnaiData() {
         name: "Sate Jamur Tiram",
         desc: "Sate jamur tiram bumbu kacang gurih khas vegetarian.",
         portions: 10,
-        lat: -6.8128,
-        lng: 107.5945,
+        lat: -6.8155,
+        lng: 107.5915,
         expiryHours: 18,
         kemasan: "Sangat Baik"
       }

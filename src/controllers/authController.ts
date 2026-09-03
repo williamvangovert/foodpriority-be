@@ -21,7 +21,7 @@ export const register = async (req: Request, res: Response) => {
     const status = role === "donor" ? "Menunggu" : "Terverifikasi";
     const result = await pool.query(
       `INSERT INTO "User" (role, username, password, nama_lengkap, alamat, no_hp, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, role, username, nama_lengkap, status`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, role, username, nama_lengkap, alamat, no_hp, status`,
       [role, username, hashedPassword, fullName, address, phoneNumber, status]
     );
 
@@ -41,7 +41,9 @@ export const register = async (req: Request, res: Response) => {
         id: user.id,
         role: user.role,
         username: user.username,
-        nama_lengkap: user.nama_lengkap
+        nama_lengkap: user.nama_lengkap,
+        alamat: user.alamat,
+        no_hp: user.no_hp
       }
     });
 
@@ -105,16 +107,81 @@ export const getMe = async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const result = await pool.query(
-      'SELECT id, role, username, nama_lengkap, alamat, no_hp FROM "User" WHERE id = $1',
+    const userResult = await pool.query(
+      'SELECT id, role, username, nama_lengkap, alamat, no_hp, status, join_date FROM "User" WHERE id = $1',
       [req.user.id]
     );
 
-    if (result.rows.length === 0) {
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ message: "User tidak ditemukan." });
     }
 
-    res.json(result.rows[0]);
+    const user = userResult.rows[0];
+
+    // Compute real account statistics
+    let stats = {
+      totalDonasi: 0,
+      orangTerbantu: 0,
+      donasiAktif: 0,
+      totalKlaim: 0,
+      klaimSelesai: 0,
+      klaimAktif: 0,
+      joinDate: user.join_date || new Date()
+    };
+
+    if (user.role === "donor") {
+      const totalDonasiRes = await pool.query(
+        'SELECT COALESCE(SUM(jumlah_porsi), 0) as total FROM "Donasi" WHERE id_donatur = $1',
+        [user.id]
+      );
+      stats.totalDonasi = parseInt(totalDonasiRes.rows[0].total, 10);
+
+      const donasiAktifRes = await pool.query(
+        'SELECT COUNT(*) as count FROM "Donasi" WHERE id_donatur = $1 AND status_donasi = \'Tersedia\' AND jumlah_porsi > 0',
+        [user.id]
+      );
+      stats.donasiAktif = parseInt(donasiAktifRes.rows[0].count, 10);
+
+      const orangTerbantuRes = await pool.query(
+        `SELECT COUNT(*) as count FROM "Transaksi_Klaim" tk
+         JOIN "Donasi" d ON tk.id_donasi = d.id
+         WHERE d.id_donatur = $1 AND tk.status_klaim = 'Selesai'`,
+        [user.id]
+      );
+      stats.orangTerbantu = parseInt(orangTerbantuRes.rows[0].count, 10);
+    } else if (user.role === "recipient") {
+      const totalKlaimRes = await pool.query(
+        'SELECT COUNT(*) as count FROM "Transaksi_Klaim" WHERE id_penerima = $1',
+        [user.id]
+      );
+      stats.totalKlaim = parseInt(totalKlaimRes.rows[0].count, 10);
+
+      const klaimSelesaiRes = await pool.query(
+        'SELECT COUNT(*) as count FROM "Transaksi_Klaim" WHERE id_penerima = $1 AND status_klaim = \'Selesai\'',
+        [user.id]
+      );
+      stats.klaimSelesai = parseInt(klaimSelesaiRes.rows[0].count, 10);
+
+      const klaimAktifRes = await pool.query(
+        'SELECT COUNT(*) as count FROM "Transaksi_Klaim" WHERE id_penerima = $1 AND status_klaim IN (\'Menunggu\', \'Diambil\')',
+        [user.id]
+      );
+      stats.klaimAktif = parseInt(klaimAktifRes.rows[0].count, 10);
+    } else if (user.role === "admin") {
+      const totalDonasiRes = await pool.query('SELECT COALESCE(SUM(jumlah_porsi), 0) as total FROM "Donasi"');
+      stats.totalDonasi = parseInt(totalDonasiRes.rows[0].total, 10);
+
+      const totalUsersRes = await pool.query('SELECT COUNT(*) as count FROM "User"');
+      stats.orangTerbantu = parseInt(totalUsersRes.rows[0].count, 10);
+
+      const donasiAktifRes = await pool.query('SELECT COUNT(*) as count FROM "Donasi" WHERE status_donasi = \'Tersedia\' AND jumlah_porsi > 0');
+      stats.donasiAktif = parseInt(donasiAktifRes.rows[0].count, 10);
+    }
+
+    res.json({
+      ...user,
+      stats
+    });
 
   } catch (error: any) {
     console.error("GetMe error:", error);
