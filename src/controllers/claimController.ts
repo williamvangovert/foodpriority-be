@@ -180,3 +180,48 @@ export const updateClaimStatus = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Gagal memperbarui status klaim.", error: error.message });
   }
 };
+
+export const getClaimById = async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Tidak terautentikasi." });
+  }
+
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT tk.*, 
+              d.nama_makanan, d.foto_makanan, d.deskripsi, d.kemasan, d.batas_kadaluwarsa,
+              d.latitude_donatur, d.longitude_donatur, d.id_donatur,
+              u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur, u.no_hp as no_hp_donatur,
+              rec.nama_lengkap as nama_penerima, rec.alamat as alamat_penerima, rec.no_hp as no_hp_penerima
+       FROM "Transaksi_Klaim" tk
+       JOIN "Donasi" d ON tk.id_donasi = d.id
+       JOIN "User" u ON d.id_donatur = u.id
+       JOIN "User" rec ON tk.id_penerima = rec.id
+       WHERE tk.id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Klaim tidak ditemukan." });
+    }
+
+    const claim = result.rows[0];
+
+    // Security check: recipient or donor or admin
+    if (
+      claim.id_penerima !== req.user.id &&
+      claim.id_donatur !== req.user.id &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Anda tidak memiliki akses ke detail klaim ini." });
+    }
+
+    res.json(claim);
+
+  } catch (error: any) {
+    console.error("Get claim by ID error:", error);
+    res.status(500).json({ message: "Gagal mengambil detail klaim.", error: error.message });
+  }
+};
