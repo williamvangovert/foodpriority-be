@@ -366,6 +366,38 @@ async function runBlackboxTests() {
       getClaimDetailRes.ok && !!claimDetailData.latitude_donatur && !!claimDetailData.longitude_donatur
     );
 
+    // ----------------------------------------------------
+    // TEST 11: Input Donasi dengan Nama Makanan Kustom (Opsi 'Lainnya')
+    // ----------------------------------------------------
+    const customDonationRes = await fetch(`${BACKEND_URL}/donations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${donorToken}`
+      },
+      body: JSON.stringify({
+        nama_makanan: "Nasi Kotak Ayam Geprek Sambal Korek",
+        deskripsi: "Porsi makanan siap santap lengkap dengan lalapan dan tempe.",
+        jumlah_porsi: "6",
+        kemasan: "Tersegel",
+        batas_kadaluwarsa: new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(),
+        latitude_donatur: "-6.8402",
+        longitude_donatur: "107.5790"
+      })
+    });
+    const customDonationData = await customDonationRes.json() as any;
+    const isCustomDonationSaved = customDonationRes.ok && customDonationData.donation?.nama_makanan === "Nasi Kotak Ayam Geprek Sambal Korek";
+
+    recordTest(
+      11,
+      "Input Donasi Makanan Kustom (Opsi 'Lainnya')",
+      "Donatur memilih jenis 'Lainnya' dan menginput nama makanan kustom secara manual",
+      "nama_makanan: 'Nasi Kotak Ayam Geprek Sambal Korek', Porsi: 6, Lokasi: Parongpong",
+      "HTTP 201, Donasi berhasil disimpan dengan nama makanan kustom",
+      `HTTP ${customDonationRes.status}, Tersimpan sebagai '${customDonationData.donation?.nama_makanan}'`,
+      isCustomDonationSaved
+    );
+
     console.log("\n==================================================================");
     console.log("📊 RINGKASAN HASIL BLACKBOX TESTING");
     console.log("==================================================================");
@@ -374,6 +406,9 @@ async function runBlackboxTests() {
     console.log(`Berhasil (PASS): ${passedCount}`);
     console.log(`Gagal (FAIL): ${testResults.length - passedCount}`);
     console.log("==================================================================");
+    console.log("\nJSON_RESULTS_START");
+    console.log(JSON.stringify(testResults, null, 2));
+    console.log("JSON_RESULTS_END");
 
     process.exit(0);
 
