@@ -12,7 +12,7 @@ const createTablesQuery = `
     alamat TEXT,
     no_hp VARCHAR(20),
     status VARCHAR(50) DEFAULT 'Terverifikasi',
-    join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
 
   -- Create Donasi Table
@@ -25,8 +25,8 @@ const createTablesQuery = `
     jumlah_porsi INTEGER NOT NULL,
     latitude_donatur DOUBLE PRECISION,
     longitude_donatur DOUBLE PRECISION,
-    waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    batas_kadaluwarsa TIMESTAMP NOT NULL,
+    waktu_input TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    batas_kadaluwarsa TIMESTAMPTZ NOT NULL,
     status_donasi VARCHAR(50) DEFAULT 'Tersedia',
     kemasan VARCHAR(50) DEFAULT 'Baik'
   );
@@ -36,7 +36,7 @@ const createTablesQuery = `
     id SERIAL PRIMARY KEY,
     id_donasi INTEGER REFERENCES "Donasi"(id) ON DELETE CASCADE,
     id_penerima INTEGER REFERENCES "User"(id) ON DELETE CASCADE,
-    waktu_klaim TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    waktu_klaim TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     jarak_antar_lokasi DOUBLE PRECISION,
     skor_saw DOUBLE PRECISION,
     status_klaim VARCHAR(50) DEFAULT 'Menunggu'
