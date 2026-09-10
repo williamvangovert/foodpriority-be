@@ -15,6 +15,8 @@ export interface DonationItem {
   kemasan: string;
   nama_donatur?: string;
   alamat_donatur?: string;
+  donor_rating?: number;
+  rating_count?: number;
   jarak?: number;
   skor_saw?: number;
 }
@@ -64,7 +66,21 @@ export const calculateSAWRanking = async (
 
   // 1. Fetch active, available, non-expired donations
   const donationsResult = await pool.query(
-    `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur 
+    `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur,
+            COALESCE(
+              (SELECT ROUND(AVG(tk.rating)::numeric, 1) 
+               FROM "Transaksi_Klaim" tk 
+               JOIN "Donasi" dn ON tk.id_donasi = dn.id 
+               WHERE dn.id_donatur = d.id_donatur AND tk.rating IS NOT NULL),
+              5.0
+            )::float as donor_rating,
+            COALESCE(
+              (SELECT COUNT(tk.rating)
+               FROM "Transaksi_Klaim" tk 
+               JOIN "Donasi" dn ON tk.id_donasi = dn.id 
+               WHERE dn.id_donatur = d.id_donatur AND tk.rating IS NOT NULL),
+              0
+            )::int as rating_count
      FROM "Donasi" d 
      JOIN "User" u ON d.id_donatur = u.id 
      WHERE d.status_donasi = 'Tersedia' 

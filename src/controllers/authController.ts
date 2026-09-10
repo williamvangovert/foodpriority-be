@@ -309,6 +309,17 @@ export const getMe = async (req: AuthRequest, res: Response) => {
         [user.id]
       );
       stats.orangTerbantu = parseInt(orangTerbantuRes.rows[0].count, 10);
+
+      const ratingRes = await pool.query(
+        `SELECT ROUND(COALESCE(AVG(tk.rating), 5.0)::numeric, 1) as avg_rating,
+                COUNT(tk.rating) as rating_count
+         FROM "Transaksi_Klaim" tk
+         JOIN "Donasi" d ON tk.id_donasi = d.id
+         WHERE d.id_donatur = $1 AND tk.rating IS NOT NULL`,
+        [user.id]
+      );
+      (stats as any).averageRating = parseFloat(ratingRes.rows[0].avg_rating) || 5.0;
+      (stats as any).ratingCount = parseInt(ratingRes.rows[0].rating_count, 10) || 0;
     } else if (user.role === "recipient") {
       const totalKlaimRes = await pool.query(
         'SELECT COUNT(*) as count FROM "Transaksi_Klaim" WHERE id_penerima = $1',

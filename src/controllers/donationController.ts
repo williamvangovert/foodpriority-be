@@ -66,7 +66,21 @@ export const getDonations = async (req: AuthRequest, res: Response) => {
 
     // Default: List all available donations ordered by waktu_input desc
     const result = await pool.query(
-      `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur 
+      `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur,
+              COALESCE(
+                (SELECT ROUND(AVG(tk.rating)::numeric, 1) 
+                 FROM "Transaksi_Klaim" tk 
+                 JOIN "Donasi" dn ON tk.id_donasi = dn.id 
+                 WHERE dn.id_donatur = d.id_donatur AND tk.rating IS NOT NULL),
+                5.0
+              )::float as donor_rating,
+              COALESCE(
+                (SELECT COUNT(tk.rating)
+                 FROM "Transaksi_Klaim" tk 
+                 JOIN "Donasi" dn ON tk.id_donasi = dn.id 
+                 WHERE dn.id_donatur = d.id_donatur AND tk.rating IS NOT NULL),
+                0
+              )::int as rating_count
        FROM "Donasi" d
        JOIN "User" u ON d.id_donatur = u.id
        WHERE d.status_donasi = 'Tersedia' 

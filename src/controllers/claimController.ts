@@ -228,3 +228,55 @@ export const getClaimById = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Gagal mengambil detail klaim.", error: error.message });
   }
 };
+
+export const addClaimRating = async (req: AuthRequest, res: Response) => {
+  if (!req.user || req.user.role !== "recipient") {
+    return res.status(403).json({ message: "Hanya penerima donasi yang dapat memberikan rating." });
+  }
+
+  const { id } = req.params;
+  const { rating, komentar_rating } = req.body;
+
+  const parsedRating = parseInt(rating, 10);
+  if (isNaN(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+    return res.status(400).json({ message: "Rating harus berupa angka antara 1 sampai 5 bintang." });
+  }
+
+  try {
+    const claimCheck = await pool.query(
+      `SELECT tk.*, d.id_donatur 
+       FROM "Transaksi_Klaim" tk 
+       JOIN "Donasi" d ON tk.id_donasi = d.id 
+       WHERE tk.id = $1`,
+      [id]
+    );
+
+    if (claimCheck.rows.length === 0) {
+      return res.status(404).json({ message: "Transaksi klaim tidak ditemukan." });
+    }
+
+    const claim = claimCheck.rows[0];
+
+    if (claim.id_penerima !== req.user.id) {
+      return res.status(403).json({ message: "Anda tidak berhak memberikan rating untuk klaim ini." });
+    }
+
+    const result = await pool.query(
+      `UPDATE "Transaksi_Klaim" 
+       SET rating = $1, komentar_rating = $2, waktu_rating = NOW() 
+       WHERE id = $3 
+       RETURNING *`,
+      [parsedRating, komentar_rating?.trim() || null, id]
+    );
+
+    res.json({
+      message: "Terima kasih! Rating dan ulasan donatur berhasil disimpan.",
+      claim: result.rows[0],
+    });
+
+  } catch (error: any) {
+    console.error("Add claim rating error:", error);
+    res.status(500).json({ message: "Gagal menyimpan rating klaim.", error: error.message });
+  }
+};
+

@@ -39,7 +39,10 @@ const createTablesQuery = `
     waktu_klaim TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     jarak_antar_lokasi DOUBLE PRECISION,
     skor_saw DOUBLE PRECISION,
-    status_klaim VARCHAR(50) DEFAULT 'Menunggu'
+    status_klaim VARCHAR(50) DEFAULT 'Menunggu',
+    rating INTEGER,
+    komentar_rating TEXT,
+    waktu_rating TIMESTAMPTZ
   );
 
   -- Create Pengaturan_SAW Table
