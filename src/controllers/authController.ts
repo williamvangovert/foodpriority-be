@@ -3,54 +3,214 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "../config/db";
 import { AuthRequest } from "../middleware/auth";
+import { formatPhoneNumber, generateOtp, sendWhatsAppOtp } from "../services/whatsappService";
 
-export const register = async (req: Request, res: Response) => {
+interface PendingRegistration {
+  otp: string;
+  expiresAt: number;
+  resendAfter: number;
+  attempts: number;
+  userData: {
+    fullName: string;
+    username: string;
+    address: string;
+    phoneNumber: string;
+    password: string;
+    role: string;
+  };
+}
+
+// In-memory store for pending OTP registrations (Key: formatted phone number)
+const pendingRegistrations = new Map<string, PendingRegistration>();
+
+/**
+ * Step 1: Validate form, generate OTP, send via WhatsApp
+ */
+export const sendRegisterOtp = async (req: Request, res: Response) => {
   const { fullName, username, address, phoneNumber, password, role } = req.body;
 
+  if (!fullName || !username || !phoneNumber || !password || !role) {
+    return res.status(400).json({ message: "Semua kolom wajib diisi." });
+  }
+
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+
   try {
-    // Check if user already exists
-    const userCheck = await pool.query('SELECT * FROM "User" WHERE username = $1', [username]);
-    if (userCheck.rows.length > 0) {
-      return res.status(400).json({ message: "Username sudah digunakan." });
+    // 1. Check if username already exists
+    const usernameCheck = await pool.query('SELECT id FROM "User" WHERE username = $1', [username.trim()]);
+    if (usernameCheck.rows.length > 0) {
+      return res.status(400).json({ message: "Username sudah digunakan. Silakan gunakan username lain." });
     }
+
+    // 2. Check if phone number already exists
+    const phoneCheck = await pool.query('SELECT id FROM "User" WHERE no_hp = $1 OR no_hp = $2', [phoneNumber.trim(), formattedPhone]);
+    if (phoneCheck.rows.length > 0) {
+      return res.status(400).json({ message: "Nomor WhatsApp sudah terdaftar. Silakan langsung masuk atau gunakan nomor lain." });
+    }
+
+    // 3. Generate 6-digit OTP
+    const otp = generateOtp();
+    const now = Date.now();
+    const expiresAt = now + 5 * 60 * 1000; // 5 minutes
+    const resendAfter = now + 60 * 1000; // 60 seconds cooldown
+
+    pendingRegistrations.set(formattedPhone, {
+      otp,
+      expiresAt,
+      resendAfter,
+      attempts: 0,
+      userData: {
+        fullName: fullName.trim(),
+        username: username.trim(),
+        address: address?.trim() || "-",
+        phoneNumber: phoneNumber.trim(),
+        password,
+        role
+      }
+    });
+
+    // 4. Send OTP via WhatsApp
+    const sendResult = await sendWhatsAppOtp(formattedPhone, otp);
+
+    res.status(200).json({
+      success: true,
+      message: "Kode OTP verifikasi telah dikirimkan ke WhatsApp Anda.",
+      phoneNumber: formattedPhone,
+      method: sendResult.method
+    });
+
+  } catch (error: any) {
+    console.error("sendRegisterOtp error:", error);
+    res.status(500).json({ message: "Gagal memproses kode OTP.", error: error.message });
+  }
+};
+
+/**
+ * Step 2: Verify OTP and create user account
+ */
+export const verifyRegisterOtp = async (req: Request, res: Response) => {
+  const { phoneNumber, otp } = req.body;
+
+  if (!phoneNumber || !otp) {
+    return res.status(400).json({ message: "Nomor telepon dan kode OTP harus diisi." });
+  }
+
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  const pending = pendingRegistrations.get(formattedPhone);
+
+  if (!pending) {
+    return res.status(400).json({ 
+      message: "Permintaan OTP tidak ditemukan atau telah kedaluwarsa. Silakan lakukan registrasi ulang." 
+    });
+  }
+
+  const now = Date.now();
+
+  // Check expiration
+  if (now > pending.expiresAt) {
+    pendingRegistrations.delete(formattedPhone);
+    return res.status(400).json({ 
+      message: "Kode OTP telah kedaluwarsa. Silakan klik 'Kirim Ulang OTP'." 
+    });
+  }
+
+  // Check attempts
+  if (pending.attempts >= 5) {
+    pendingRegistrations.delete(formattedPhone);
+    return res.status(400).json({ 
+      message: "Terlalu banyak percobaan yang salah. Silakan lakukan pendaftaran dari awal." 
+    });
+  }
+
+  // Check OTP match
+  if (pending.otp.trim() !== otp.trim()) {
+    pending.attempts += 1;
+    return res.status(400).json({ 
+      message: `Kode OTP salah. Sisa percobaan: ${5 - pending.attempts}` 
+    });
+  }
+
+  // OTP is Valid! Create account in Database
+  try {
+    const { fullName, username, address, phoneNumber: rawPhone, password, role } = pending.userData;
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert user (default status is 'Terverifikasi' for recipients/admins, 'Menunggu' for donors)
-    const status = role === "donor" ? "Menunggu" : "Terverifikasi";
+    // Insert user with status 'Terverifikasi'
     const result = await pool.query(
       `INSERT INTO "User" (role, username, password, nama_lengkap, alamat, no_hp, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, role, username, nama_lengkap, alamat, no_hp, status`,
-      [role, username, hashedPassword, fullName, address, phoneNumber, status]
+       VALUES ($1, $2, $3, $4, $5, $6, 'Terverifikasi') 
+       RETURNING id, role, username, nama_lengkap, alamat, no_hp, status`,
+      [role, username, hashedPassword, fullName, address, rawPhone]
     );
 
     const user = result.rows[0];
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      process.env.JWT_SECRET || "supersecretkeyfoodpriority123!",
-      { expiresIn: "7d" }
-    );
+    // Remove pending OTP
+    pendingRegistrations.delete(formattedPhone);
 
     res.status(201).json({
-      message: "Registrasi berhasil!",
-      token,
+      success: true,
+      message: "Registrasi berhasil! Akun Anda telah aktif dan terverifikasi. Silakan masuk.",
       user: {
         id: user.id,
         role: user.role,
         username: user.username,
         nama_lengkap: user.nama_lengkap,
-        alamat: user.alamat,
         no_hp: user.no_hp
       }
     });
 
   } catch (error: any) {
-    console.error("Register error:", error);
-    res.status(500).json({ message: "Terjadi kesalahan server saat registrasi.", error: error.message });
+    console.error("verifyRegisterOtp error:", error);
+    res.status(500).json({ message: "Gagal mendaftarkan akun.", error: error.message });
   }
+};
+
+/**
+ * Resend OTP
+ */
+export const resendRegisterOtp = async (req: Request, res: Response) => {
+  const { phoneNumber } = req.body;
+
+  if (!phoneNumber) {
+    return res.status(400).json({ message: "Nomor telepon harus diisi." });
+  }
+
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  const pending = pendingRegistrations.get(formattedPhone);
+
+  if (!pending) {
+    return res.status(400).json({ message: "Sesi OTP telah berakhir. Silakan isi form pendaftaran kembali." });
+  }
+
+  const now = Date.now();
+  if (now < pending.resendAfter) {
+    const secondsRemaining = Math.ceil((pending.resendAfter - now) / 1000);
+    return res.status(400).json({ 
+      message: `Harap tunggu ${secondsRemaining} detik sebelum meminta kode OTP baru.` 
+    });
+  }
+
+  // Generate new OTP
+  const newOtp = generateOtp();
+  pending.otp = newOtp;
+  pending.expiresAt = now + 5 * 60 * 1000;
+  pending.resendAfter = now + 60 * 1000;
+  pending.attempts = 0;
+
+  await sendWhatsAppOtp(formattedPhone, newOtp);
+
+  res.json({
+    success: true,
+    message: "Kode OTP baru telah dikirimkan ke WhatsApp Anda."
+  });
+};
+
+export const register = async (req: Request, res: Response) => {
+  // Direct fallback register
+  return sendRegisterOtp(req, res);
 };
 
 export const login = async (req: Request, res: Response) => {

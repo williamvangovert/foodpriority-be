@@ -51,15 +51,35 @@ export const calculateSAWRanking = async (
   recipientLat: number,
   recipientLng: number
 ): Promise<DonationItem[]> => {
-  // 1. Fetch active donations
+  // 0. Auto-update expired donations to 'Kedaluwarsa'
+  try {
+    await pool.query(
+      `UPDATE "Donasi" 
+       SET status_donasi = 'Kedaluwarsa' 
+       WHERE status_donasi = 'Tersedia' AND batas_kadaluwarsa <= NOW()`
+    );
+  } catch (err) {
+    console.error("Error auto-updating expired donations:", err);
+  }
+
+  // 1. Fetch active, available, non-expired donations
   const donationsResult = await pool.query(
     `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur 
      FROM "Donasi" d 
      JOIN "User" u ON d.id_donatur = u.id 
-     WHERE d.status_donasi = 'Tersedia' AND d.jumlah_porsi > 0`
+     WHERE d.status_donasi = 'Tersedia' 
+       AND d.jumlah_porsi > 0 
+       AND d.batas_kadaluwarsa > NOW()`
   );
 
-  const donations: DonationItem[] = donationsResult.rows;
+  const rawDonations: DonationItem[] = donationsResult.rows;
+  const now = new Date();
+
+  // Double check expiration filter in JS (time-zone safety)
+  const donations = rawDonations.filter((d) => {
+    const exp = new Date(d.batas_kadaluwarsa).getTime();
+    return exp > now.getTime();
+  });
 
   if (donations.length === 0) {
     return [];
@@ -77,8 +97,6 @@ export const calculateSAWRanking = async (
       type: c.tipe.toLowerCase() as "cost" | "benefit",
     };
   });
-
-  const now = new Date();
 
   // 3. Process each donation: calculate raw criteria values
   const processedDonations = donations.map((d) => {

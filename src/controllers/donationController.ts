@@ -47,6 +47,17 @@ export const getDonations = async (req: AuthRequest, res: Response) => {
   const { lat, lng } = req.query;
 
   try {
+    // 0. Auto-update expired donations in database
+    try {
+      await pool.query(
+        `UPDATE "Donasi" 
+         SET status_donasi = 'Kedaluwarsa' 
+         WHERE status_donasi = 'Tersedia' AND batas_kadaluwarsa <= NOW()`
+      );
+    } catch (e) {
+      console.error("Error auto-updating expired donations:", e);
+    }
+
     if (lat && lng) {
       // Calculate distances and rank using the SAW service!
       const ranked = await calculateSAWRanking(parseFloat(lat as string), parseFloat(lng as string));
@@ -58,7 +69,9 @@ export const getDonations = async (req: AuthRequest, res: Response) => {
       `SELECT d.*, u.nama_lengkap as nama_donatur, u.alamat as alamat_donatur 
        FROM "Donasi" d
        JOIN "User" u ON d.id_donatur = u.id
-       WHERE d.status_donasi = 'Tersedia' AND d.jumlah_porsi > 0
+       WHERE d.status_donasi = 'Tersedia' 
+         AND d.jumlah_porsi > 0 
+         AND d.batas_kadaluwarsa > NOW()
        ORDER BY d.waktu_input DESC`
     );
     res.json(result.rows);
@@ -75,6 +88,17 @@ export const getMyDonations = async (req: AuthRequest, res: Response) => {
   }
 
   try {
+    // Auto-update expired items
+    try {
+      await pool.query(
+        `UPDATE "Donasi" 
+         SET status_donasi = 'Kedaluwarsa' 
+         WHERE status_donasi = 'Tersedia' AND batas_kadaluwarsa <= NOW()`
+      );
+    } catch (e) {
+      console.error("Error auto-updating expired donations:", e);
+    }
+
     const result = await pool.query(
       `SELECT * FROM "Donasi" 
        WHERE id_donatur = $1 

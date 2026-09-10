@@ -56,6 +56,70 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
     // 7. SAW weights configuration
     const sawWeightsResult = await pool.query('SELECT * FROM "Pengaturan_SAW"');
 
+    // 8. Real Social Impact Report & Breakdown from Database
+    const donationsRes = await pool.query('SELECT nama_makanan, jumlah_porsi FROM "Donasi"');
+    const categories: { [key: string]: number } = {};
+    let totalAllPortions = 0;
+
+    donationsRes.rows.forEach((row) => {
+      const name = (row.nama_makanan || "").toLowerCase();
+      const porsi = parseInt(row.jumlah_porsi, 10) || 0;
+      totalAllPortions += porsi;
+
+      let cat = "Makanan Lainnya";
+      if (/nasi|ayam|daging|ikan|soto|bakso|siomay|batagor|mie|pasta|rendang|gulai|sate|sop|sayur matang/.test(name)) {
+        cat = "Makanan Siap Saji & Lauk";
+      } else if (/roti|kue|cake|donat|bolu|bakery|pastry|biskuit/.test(name)) {
+        cat = "Roti & Produk Olahan Gandum";
+      } else if (/apel|pisang|jeruk|mangga|buah|sayur|tomat|wortel|bayam|kangkung|salada/.test(name)) {
+        cat = "Buah & Sayuran Segar";
+      } else if (/beras|biji|jagung|gandum|kedelai|kacang/.test(name)) {
+        cat = "Bahan Pokok & Serealia";
+      } else if (/susu|yogurt|keju|mentega|kopi|teh|jus|minuman/.test(name)) {
+        cat = "Minuman & Produk Susu";
+      } else if (/kaleng|sarden|kornet/.test(name)) {
+        cat = "Makanan Olahan & Kaleng";
+      }
+
+      categories[cat] = (categories[cat] || 0) + porsi;
+    });
+
+    // Standard conversion factor: 1 portion = 0.25 kg (250 grams)
+    const KG_PER_PORTION = 0.25;
+    const totalKg = Math.round(totalAllPortions * KG_PER_PORTION * 10) / 10;
+
+    const foodBreakdown = Object.entries(categories).map(([type, portions]) => ({
+      type,
+      portions,
+      weight: Math.round(portions * KG_PER_PORTION * 10) / 10,
+      percentage: totalAllPortions > 0 ? Math.round((portions / totalAllPortions) * 100) : 0,
+    })).sort((a, b) => b.portions - a.portions);
+
+    // Unique claimants / people impacted
+    const claimantsRes = await pool.query('SELECT COUNT(DISTINCT id_penerima) as count FROM "Transaksi_Klaim"');
+    const uniqueClaimants = parseInt(claimantsRes.rows[0]?.count || "0", 10);
+    // If no claims yet, reflect registered recipient count
+    const peopleImpacted = uniqueClaimants > 0 ? uniqueClaimants : recipientCount;
+
+    // Environmental calculations based on standard FAO & IPCC conversion factors:
+    // - 2.5 kg CO2e saved per 1 kg food waste diverted from landfills
+    // - 500 L virtual water footprint saved per 1 kg food rescued
+    const wastePreventedKg = totalKg;
+    const co2SavedKg = Math.round(totalKg * 2.5 * 10) / 10;
+    const waterSavedLiter = Math.round(totalKg * 500);
+
+    const socialImpact = {
+      totalFoodDistributedKg: totalKg,
+      totalPortionsServed: totalAllPortions,
+      peopleImpacted: peopleImpacted,
+      foodBreakdown,
+      environmentalImpact: {
+        wastePreventedKg,
+        co2SavedKg,
+        waterSavedLiter,
+      },
+    };
+
     res.json({
       stats: {
         totalDonations,
@@ -68,6 +132,7 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
       dailyDonations: dailyDonationsResult.rows,
       locationStats: locationStatsResult.rows,
       sawWeights: sawWeightsResult.rows,
+      socialImpact,
     });
 
   } catch (error: any) {
